@@ -1,10 +1,5 @@
 """
-D-Nerve Backend API Server
-FastAPI application for Cairo Informal Transit Platform
-
-Author: D-Nerve Team
-Version: 1.0.0
-Date: January 2026
+D-Nerve Backend API Server - PostgreSQL
 """
 
 from fastapi import FastAPI
@@ -12,7 +7,6 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 
 from app.config import settings
-from app.routers import eta, drivers, trips, routes, gamification
 
 # Configure logging
 logging.basicConfig(
@@ -27,87 +21,20 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.APP_NAME,
-    description="""
-    Backend API for the D-Nerve Cairo Informal Transit Platform.
-    
-    ## Features
-    - **ETA Prediction**: Estimate travel times for microbus routes
-    - **Route Discovery**: Access discovered microbus routes
-    - **Trip Tracking**: Submit and track GPS trips
-    - **Gamification**: Driver scoring, leaderboards, and rewards
-    
-    ## ML Models
-    - ETA Model: Linear Regression (MAE: 3.28 min)
-    - Route Discovery: DBSCAN Clustering (F1: 0.963)
-    """,
+    description="Backend API for D-Nerve Cairo Informal Transit Platform",
     version=settings.APP_VERSION,
     docs_url="/docs",
     redoc_url="/redoc"
 )
 
-# CORS middleware for mobile apps
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure properly in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# =============================================================================
-# INCLUDE ROUTERS
-# =============================================================================
-
-app.include_router(eta.router, prefix="/api/v1", tags=["ETA Prediction"])
-app.include_router(routes.router, prefix="/api/v1", tags=["Routes"])
-app.include_router(trips.router, prefix="/api/v1", tags=["Trips"])
-app.include_router(drivers.router, prefix="/api/v1", tags=["Drivers"])
-app.include_router(gamification.router, prefix="/api/v1", tags=["Gamification"])
-
-# =============================================================================
-# ROOT ENDPOINTS
-# =============================================================================
-
-@app.get("/", tags=["System"])
-async def root():
-    """API root - returns basic info"""
-    return {
-        "name": settings.APP_NAME,
-        "version": settings.APP_VERSION,
-        "docs": "/docs",
-        "health": "/api/v1/health"
-    }
-
-
-@app.get("/api/v1/health", tags=["System"])
-async def health_check():
-    """System health check"""
-    from app.ml.model_loader import DNerveModelLoader
-    
-    try:
-        loader = DNerveModelLoader()
-        ml_health = loader.health_check()
-    except Exception as e:
-        ml_health = {"healthy": False, "error": str(e)}
-    
-    return {
-        "status": "healthy" if ml_health.get('healthy', False) else "degraded",
-        "components": {
-            "api": {"status": "healthy"},
-            "ml_models": ml_health,
-            "database": {"status": "healthy"}  # Update when DB connected
-        },
-        "version": settings.APP_VERSION
-    }
-
-
-@app.get("/api/v1/model-info", tags=["System"])
-async def get_model_info():
-    """Get ML model information"""
-    from app.ml.model_loader import DNerveModelLoader
-    
-    loader = DNerveModelLoader()
-    return loader.get_model_info()
 
 
 # =============================================================================
@@ -119,14 +46,30 @@ async def startup_event():
     """Run on application startup"""
     logger.info(f"🚀 Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     
-    # Pre-load ML models
+    # Initialize database
+    try:
+        from app.models.database import create_tables, SessionLocal, init_sample_routes
+        create_tables()
+        
+        # Initialize sample routes
+        db = SessionLocal()
+        try:
+            init_sample_routes(db)
+        finally:
+            db.close()
+        
+        logger.info("✓ Database initialized")
+    except Exception as e:
+        logger.error(f"✗ Database initialization failed: {e}")
+    
+    # Load ML models
     try:
         from app.ml.model_loader import DNerveModelLoader
         loader = DNerveModelLoader()
-        _ = loader.eta_model  # Trigger loading
+        _ = loader.eta_model
         logger.info("✓ ML models loaded")
     except Exception as e:
-        logger.error(f"✗ Failed to load ML models: {e}")
+        logger.warning(f"⚠ ML models not loaded: {e}")
     
     logger.info("✓ Application started successfully")
 
@@ -138,24 +81,80 @@ async def shutdown_event():
 
 
 # =============================================================================
+# INCLUDE ROUTERS
+# =============================================================================
+
+from app.routers import eta, drivers, trips, routes, gamification
+
+app.include_router(eta.router, prefix="/api/v1", tags=["ETA Prediction"])
+app.include_router(routes.router, prefix="/api/v1", tags=["Routes"])
+app.include_router(trips.router, prefix="/api/v1", tags=["Trips"])
+app.include_router(drivers.router, prefix="/api/v1", tags=["Drivers"])
+app.include_router(gamification.router, prefix="/api/v1", tags=["Gamification"])
+
+
+# =============================================================================
+# ROOT ENDPOINTS
+# =============================================================================
+
+@app.get("/", tags=["System"])
+async def root():
+    return {
+        "name": settings.APP_NAME,
+        "version": settings.APP_VERSION,
+        "docs": "/docs",
+        "health": "/api/v1/health"
+    }
+
+
+@app.get("/api/v1/health", tags=["System"])
+async def health_check():
+    from app.models.database import SessionLocal, Driver
+    
+    # Check database
+    db_healthy = False
+    try:
+        db = SessionLocal()
+        db.query(Driver).first()
+        db.close()
+        db_healthy = True
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+    
+    # Check ML models
+    ml_healthy = False
+    try:
+        from app.ml.model_loader import DNerveModelLoader
+        loader = DNerveModelLoader()
+        ml_healthy = loader.health_check().get('healthy', False)
+    except:
+        pass
+    
+    return {
+        "status": "healthy" if db_healthy else "degraded",
+        "components": {
+            "api": {"status": "healthy"},
+            "database": {"status": "healthy" if db_healthy else "unhealthy"},
+            "ml_models": {"status": "healthy" if ml_healthy else "unavailable"}
+        },
+        "version": settings.APP_VERSION
+    }
+
+
+@app.get("/api/v1/model-info", tags=["System"])
+async def get_model_info():
+    try:
+        from app.ml.model_loader import DNerveModelLoader
+        loader = DNerveModelLoader()
+        return loader.get_model_info()
+    except Exception as e:
+        return {"error": str(e), "status": "unavailable"}
+
+
+# =============================================================================
 # MAIN
 # =============================================================================
 
 if __name__ == "__main__":
     import uvicorn
-    
-    print("="*70)
-    print("D-NERVE FASTAPI SERVER")
-    print("="*70)
-    print(f"\n📍 Starting {settings.APP_NAME}...")
-    print("   Docs: http://localhost:8000/docs")
-    print("   Health: http://localhost:8000/api/v1/health")
-    print("\n")
-    
-    uvicorn.run(
-        "app.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=settings.DEBUG,
-        log_level="info"
-    )
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=settings.DEBUG)

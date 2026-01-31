@@ -1,16 +1,16 @@
 """
-Drivers Router
+Drivers Router - PostgreSQL with User model
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, Field
-from typing import Dict, Any, Optional
+from typing import Optional
 from datetime import datetime
+from sqlalchemy.orm import Session
+
+from app.models.database import get_db, User, Driver, UserType
 
 router = APIRouter()
-
-# In-memory storage (replace with database in production)
-drivers_db: Dict[str, Dict] = {}
 
 
 # =============================================================================
@@ -18,35 +18,51 @@ drivers_db: Dict[str, Dict] = {}
 # =============================================================================
 
 class DriverRegistration(BaseModel):
-    """Driver registration request"""
     name: str = Field(..., min_length=2, max_length=100)
     phone: str = Field(..., min_length=10, max_length=20)
-    vehicle_type: str = Field(..., min_length=2, max_length=50)
-    license_plate: str = Field(..., min_length=2, max_length=20)
+    vehicle_type: str = Field(default="Microbus")
+    license_plate: Optional[str] = None
 
 
 class DriverUpdate(BaseModel):
-    """Driver update request"""
     name: Optional[str] = None
     phone: Optional[str] = None
     vehicle_type: Optional[str] = None
     license_plate: Optional[str] = None
 
 
-class DriverResponse(BaseModel):
-    """Driver profile response"""
-    driver_id: str
-    name: str
-    phone: str
-    vehicle_type: str
-    license_plate: str
-    total_points: int
-    current_tier: str
-    trips_completed: int
-    quality_avg: float
-    current_streak: int
-    rewards_available_egp: float
-    member_since: str
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+def calculate_tier(points: int) -> str:
+    if points >= 10000:
+        return "Diamond"
+    elif points >= 5000:
+        return "Platinum"
+    elif points >= 2000:
+        return "Gold"
+    elif points >= 500:
+        return "Silver"
+    return "Bronze"
+
+
+def driver_to_dict(driver: Driver) -> dict:
+    return {
+        "driver_id": driver.driver_id,
+        "name": driver.user.name,
+        "phone": driver.user.phone,
+        "vehicle_type": driver.vehicle_type,
+        "license_plate": driver.license_plate or "",
+        "total_points": driver.total_points,
+        "tier": driver.tier,
+        "current_tier": driver.tier,
+        "trips_completed": driver.trips_completed,
+        "quality_avg": round(driver.quality_avg, 2),
+        "current_streak": driver.current_streak,
+        "rewards_available_egp": round((driver.rewards_earned or 0) - (driver.rewards_withdrawn or 0), 2),
+        "member_since": driver.created_at.isoformat() + "Z" if driver.created_at else ""
+    }
 
 
 # =============================================================================
@@ -54,111 +70,111 @@ class DriverResponse(BaseModel):
 # =============================================================================
 
 @router.post("/drivers/register")
-async def register_driver(registration: DriverRegistration):
-    """
-    Register a new driver
-    """
-    # Check if phone already exists
-    for driver in drivers_db.values():
-        if driver['phone'] == registration.phone:
-            raise HTTPException(status_code=400, detail="Phone number already registered")
+async def register_driver(registration: DriverRegistration, db: Session = Depends(get_db)):
+    """Register a new driver"""
     
-    # Generate driver ID
+    # Check if phone exists
+    existing_user = db.query(User).filter(User.phone == registration.phone).first()
+    
+    if existing_user:
+        # Check if already a driver
+        existing_driver = db.query(Driver).filter(Driver.user_id == existing_user.id).first()
+        if existing_driver:
+            return driver_to_dict(existing_driver)
+        
+        # User exists but not a driver - create driver profile
+        user = existing_user
+    else:
+        # Create new user
+        user = User(
+            user_type=UserType.DRIVER,
+            phone=registration.phone,
+            name=registration.name,
+            is_active=True
+        )
+        db.add(user)
+        db.flush()  # Get user.id
+    
+    # Create driver profile
     driver_id = f"driver_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
     
-    drivers_db[driver_id] = {
-        "driver_id": driver_id,
-        "name": registration.name,
-        "phone": registration.phone,
-        "vehicle_type": registration.vehicle_type,
-        "license_plate": registration.license_plate,
-        "total_points": 0,
-        "current_tier": "Bronze",
-        "trips_completed": 0,
-        "quality_avg": 0.0,
-        "current_streak": 0,
-        "rewards_earned": 0.0,
-        "rewards_withdrawn": 0.0,
-        "member_since": datetime.utcnow().isoformat(),
-        "created_at": datetime.utcnow().isoformat()
-    }
+    driver = Driver(
+        user_id=user.id,
+        driver_id=driver_id,
+        vehicle_type=registration.vehicle_type,
+        license_plate=registration.license_plate,
+        total_points=0,
+        tier="Bronze",
+        trips_completed=0,
+        quality_avg=0.0,
+        current_streak=0,
+        rewards_earned=0.0,
+        rewards_withdrawn=0.0
+    )
     
-    return {
-        "driver_id": driver_id,
-        "message": "Registration successful! Start driving to earn points.",
-        "status": "active"
-    }
+    db.add(driver)
+    db.commit()
+    db.refresh(driver)
+    
+    return driver_to_dict(driver)
 
 
 @router.get("/drivers/{driver_id}")
-async def get_driver_profile(driver_id: str):
-    """
-    Get driver profile and stats
-    """
-    # Check gamification service first
-    from app.services.gamification import gamification_service
-    stats = gamification_service.get_driver_stats(driver_id)
+async def get_driver(driver_id: str, db: Session = Depends(get_db)):
+    """Get driver profile"""
     
-    if stats:
-        return stats
+    driver = db.query(Driver).filter(Driver.driver_id == driver_id).first()
     
-    # Fall back to database
-    if driver_id in drivers_db:
-        driver = drivers_db[driver_id]
-        return {
-            "driver_id": driver["driver_id"],
-            "name": driver["name"],
-            "phone": driver["phone"],
-            "vehicle_type": driver["vehicle_type"],
-            "total_points": driver["total_points"],
-            "current_tier": driver["current_tier"],
-            "trips_completed": driver["trips_completed"],
-            "quality_avg": driver["quality_avg"],
-            "current_streak": driver["current_streak"],
-            "rewards_available_egp": driver["rewards_earned"] - driver["rewards_withdrawn"],
-            "member_since": driver["member_since"]
-        }
+    if not driver:
+        raise HTTPException(status_code=404, detail="Driver not found")
     
-    raise HTTPException(status_code=404, detail="Driver not found")
+    return driver_to_dict(driver)
 
 
 @router.put("/drivers/{driver_id}")
-async def update_driver(driver_id: str, updates: DriverUpdate):
-    """
-    Update driver profile
-    """
-    if driver_id not in drivers_db:
+async def update_driver(driver_id: str, updates: DriverUpdate, db: Session = Depends(get_db)):
+    """Update driver profile"""
+    
+    driver = db.query(Driver).filter(Driver.driver_id == driver_id).first()
+    
+    if not driver:
         raise HTTPException(status_code=404, detail="Driver not found")
     
-    driver = drivers_db[driver_id]
-    
+    # Update user fields
     if updates.name:
-        driver['name'] = updates.name
+        driver.user.name = updates.name
     if updates.phone:
-        driver['phone'] = updates.phone
+        driver.user.phone = updates.phone
+    
+    # Update driver fields
     if updates.vehicle_type:
-        driver['vehicle_type'] = updates.vehicle_type
-    if updates.license_plate:
-        driver['license_plate'] = updates.license_plate
+        driver.vehicle_type = updates.vehicle_type
+    if updates.license_plate is not None:
+        driver.license_plate = updates.license_plate
     
-    driver['updated_at'] = datetime.utcnow().isoformat()
+    driver.updated_at = datetime.utcnow()
+    driver.user.updated_at = datetime.utcnow()
     
-    return {"message": "Profile updated", "driver": driver}
+    db.commit()
+    db.refresh(driver)
+    
+    return {"message": "Profile updated", "driver": driver_to_dict(driver)}
 
 
 @router.get("/drivers")
 async def list_drivers(
     limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db)
 ):
-    """
-    List all drivers (admin endpoint)
-    """
-    drivers = list(drivers_db.values())
+    """List all drivers"""
+    
+    total = db.query(Driver).count()
+    drivers = db.query(Driver).offset(offset).limit(limit).all()
     
     return {
-        "drivers": drivers[offset:offset+limit],
-        "total": len(drivers),
+        "drivers": [driver_to_dict(d) for d in drivers],
+        "total": total,
         "limit": limit,
         "offset": offset
     }

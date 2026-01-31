@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     
     # Database
-    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/dnerve"
+    DATABASE_URL: str = "postgresql://postgres:DENG#21@localhost:5432/dnerve"
     
     # For SQLite (development):
     # DATABASE_URL: str = "sqlite:///./dnerve.db"
