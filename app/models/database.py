@@ -4,7 +4,7 @@ D-Nerve Database Models - PostgreSQL with User model
 
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, DateTime,
-    Text, Index, Enum, ForeignKey, create_engine
+    Text, Index, Enum, ForeignKey, create_engine, UniqueConstraint
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
@@ -226,6 +226,8 @@ class PointsTransaction(Base):
 
 
 class Commuter(Base):
+
+    
     """Commuter table - for future commuter app"""
     __tablename__ = "commuters"
     
@@ -247,7 +249,39 @@ class Commuter(Base):
     # Relationship
     user = relationship("User", backref="commuter")
 
+class Badge(Base):
+    __tablename__ = "badges"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    badge_id = Column(String(50), unique=True, nullable=False)  # e.g., "first_trip"
+    name = Column(String(100), nullable=False)
+    name_ar = Column(String(100), nullable=True)  # Arabic name
+    description = Column(String(255), nullable=False)
+    description_ar = Column(String(255), nullable=True)  # Arabic description
+    icon = Column(String(50), nullable=False)  # Icon name
+    category = Column(String(50), nullable=False)  # trips, quality, streak, leaderboard
+    requirement_type = Column(String(50), nullable=False)  # trips_count, streak_days, quality_avg, etc.
+    requirement_value = Column(Integer, nullable=False)  # The threshold value
+    points_reward = Column(Integer, default=0)  # Bonus points for earning badge
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
+
+class DriverBadge(Base):
+    __tablename__ = "driver_badges"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    driver_id = Column(String(50), ForeignKey("drivers.driver_id"), nullable=False)
+    badge_id = Column(String(50), ForeignKey("badges.badge_id"), nullable=False)
+    earned_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    driver = relationship("Driver", backref="badges")
+    badge = relationship("Badge", backref="driver_badges")
+    
+    __table_args__ = (
+        UniqueConstraint('driver_id', 'badge_id', name='unique_driver_badge'),
+    )
 # =============================================================================
 # DATABASE UTILITIES
 # =============================================================================

@@ -5,6 +5,8 @@ D-Nerve Backend API Server - PostgreSQL
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
+from app.routers import badges
+from app.routers.badges import init_badges
 
 from app.config import settings
 
@@ -55,6 +57,8 @@ async def startup_event():
         db = SessionLocal()
         try:
             init_sample_routes(db)
+            init_badges(db)  
+            logger.info("✓ Badges initialized")
         finally:
             db.close()
         
@@ -91,6 +95,7 @@ app.include_router(routes.router, prefix="/api/v1", tags=["Routes"])
 app.include_router(trips.router, prefix="/api/v1", tags=["Trips"])
 app.include_router(drivers.router, prefix="/api/v1", tags=["Drivers"])
 app.include_router(gamification.router, prefix="/api/v1", tags=["Gamification"])
+app.include_router(badges.router, prefix="/api/v1")
 
 
 # =============================================================================

@@ -1,7 +1,6 @@
 """
 Database Models
 """
-
 from app.models.database import (
     Base,
     engine,
@@ -15,7 +14,9 @@ from app.models.database import (
     Withdrawal,
     Route,
     PointsTransaction,
-    Commuter
+    Commuter,
+    Badge, 
+    DriverBadge
 )
 
 __all__ = [
@@ -31,5 +32,7 @@ __all__ = [
     'Withdrawal',
     'Route',
     'PointsTransaction',
-    'Commuter'
+    'Commuter',
+    'Badge',
+    'DriverBadge'
 ]
