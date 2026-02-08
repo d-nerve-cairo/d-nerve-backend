@@ -40,6 +40,23 @@ class UserType(enum.Enum):
     ADMIN = "admin"
 
 
+class DocumentType(enum.Enum):
+    """Document types for driver verification"""
+    PROFILE_PHOTO = "profile_photo"
+    NATIONAL_ID = "national_id"
+    DRIVERS_LICENSE = "drivers_license"
+    VEHICLE_REGISTRATION = "vehicle_registration"
+    VEHICLE_PHOTO = "vehicle_photo"
+
+
+class DocumentStatus(enum.Enum):
+    """Document verification status"""
+    NOT_UPLOADED = "not_uploaded"
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 # =============================================================================
 # MODELS
 # =============================================================================
@@ -77,7 +94,7 @@ class Driver(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
-    driver_id = Column(String(50), unique=True, index=True, nullable=False)  # External ID for Android
+    driver_id = Column(String(50), unique=True, index=True, nullable=False)
     
     # Vehicle info
     vehicle_type = Column(String(50), default="Microbus")
@@ -117,7 +134,7 @@ class Trip(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     trip_id = Column(String(50), unique=True, index=True, nullable=False)
-    driver_id = Column(String(50), index=True, nullable=False)  # References Driver.driver_id
+    driver_id = Column(String(50), index=True, nullable=False)
     route_id = Column(String(50), nullable=True)
     
     # Time
@@ -226,8 +243,6 @@ class PointsTransaction(Base):
 
 
 class Commuter(Base):
-
-    
     """Commuter table - for future commuter app"""
     __tablename__ = "commuters"
     
@@ -241,7 +256,7 @@ class Commuter(Base):
     work_lat = Column(Float, nullable=True)
     work_lon = Column(Float, nullable=True)
     
-    favorite_routes = Column(Text, nullable=True)  # JSON
+    favorite_routes = Column(Text, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -249,25 +264,28 @@ class Commuter(Base):
     # Relationship
     user = relationship("User", backref="commuter")
 
+
 class Badge(Base):
+    """Badge definitions"""
     __tablename__ = "badges"
     
     id = Column(Integer, primary_key=True, index=True)
-    badge_id = Column(String(50), unique=True, nullable=False)  # e.g., "first_trip"
+    badge_id = Column(String(50), unique=True, nullable=False)
     name = Column(String(100), nullable=False)
-    name_ar = Column(String(100), nullable=True)  # Arabic name
+    name_ar = Column(String(100), nullable=True)
     description = Column(String(255), nullable=False)
-    description_ar = Column(String(255), nullable=True)  # Arabic description
-    icon = Column(String(50), nullable=False)  # Icon name
-    category = Column(String(50), nullable=False)  # trips, quality, streak, leaderboard
-    requirement_type = Column(String(50), nullable=False)  # trips_count, streak_days, quality_avg, etc.
-    requirement_value = Column(Integer, nullable=False)  # The threshold value
-    points_reward = Column(Integer, default=0)  # Bonus points for earning badge
+    description_ar = Column(String(255), nullable=True)
+    icon = Column(String(50), nullable=False)
+    category = Column(String(50), nullable=False)
+    requirement_type = Column(String(50), nullable=False)
+    requirement_value = Column(Integer, nullable=False)
+    points_reward = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class DriverBadge(Base):
+    """Driver earned badges"""
     __tablename__ = "driver_badges"
     
     id = Column(Integer, primary_key=True, index=True)
@@ -282,6 +300,41 @@ class DriverBadge(Base):
     __table_args__ = (
         UniqueConstraint('driver_id', 'badge_id', name='unique_driver_badge'),
     )
+
+
+class Document(Base):
+    """Driver documents for verification"""
+    __tablename__ = "documents"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    document_id = Column(String(50), unique=True, index=True, nullable=False)
+    driver_id = Column(String(50), ForeignKey("drivers.driver_id"), nullable=False)
+    
+    # Document info
+    document_type = Column(Enum(DocumentType), nullable=False)
+    file_path = Column(String(500), nullable=True)
+    file_name = Column(String(255), nullable=True)
+    file_size = Column(Integer, default=0)
+    
+    # Verification
+    status = Column(Enum(DocumentStatus), default=DocumentStatus.PENDING)
+    rejection_reason = Column(String(255), nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(String(50), nullable=True)
+    
+    # Timestamps
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship
+    driver = relationship("Driver", backref="documents")
+    
+    __table_args__ = (
+        Index('idx_document_driver', 'driver_id'),
+        UniqueConstraint('driver_id', 'document_type', name='unique_driver_document'),
+    )
+
+
 # =============================================================================
 # DATABASE UTILITIES
 # =============================================================================

@@ -16,7 +16,10 @@ from app.models.database import (
     PointsTransaction,
     Commuter,
     Badge, 
-    DriverBadge
+    DriverBadge,
+    DocumentType,
+    DocumentStatus,
+    Document
 )
 
 __all__ = [
@@ -34,5 +37,8 @@ __all__ = [
     'PointsTransaction',
     'Commuter',
     'Badge',
-    'DriverBadge'
+    'DriverBadge',
+    'DocumentType',
+    'DocumentStatus',
+    'Document'
 ]

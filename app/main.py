@@ -88,7 +88,7 @@ async def shutdown_event():
 # INCLUDE ROUTERS
 # =============================================================================
 
-from app.routers import eta, drivers, trips, routes, gamification
+from app.routers import eta, drivers, trips, routes, gamification, documents
 
 app.include_router(eta.router, prefix="/api/v1", tags=["ETA Prediction"])
 app.include_router(routes.router, prefix="/api/v1", tags=["Routes"])
@@ -96,6 +96,7 @@ app.include_router(trips.router, prefix="/api/v1", tags=["Trips"])
 app.include_router(drivers.router, prefix="/api/v1", tags=["Drivers"])
 app.include_router(gamification.router, prefix="/api/v1", tags=["Gamification"])
 app.include_router(badges.router, prefix="/api/v1")
+app.include_router(documents.router, prefix="/api/v1", tags=["Documents"])
 
 
 # =============================================================================
