@@ -47,25 +47,25 @@ app.add_middleware(
 async def startup_event():
     """Run on application startup"""
     logger.info(f"🚀 Starting {settings.APP_NAME} v{settings.APP_VERSION}")
-    
+
     # Initialize database
     try:
         from app.models.database import create_tables, SessionLocal, init_sample_routes
         create_tables()
-        
+
         # Initialize sample routes
         db = SessionLocal()
         try:
             init_sample_routes(db)
-            init_badges(db)  
+            init_badges(db)
             logger.info("✓ Badges initialized")
         finally:
             db.close()
-        
+
         logger.info("✓ Database initialized")
     except Exception as e:
         logger.error(f"✗ Database initialization failed: {e}")
-    
+
     # Load ML models
     try:
         from app.ml.model_loader import DNerveModelLoader
@@ -74,7 +74,15 @@ async def startup_event():
         logger.info("✓ ML models loaded")
     except Exception as e:
         logger.warning(f"⚠ ML models not loaded: {e}")
-    
+
+    # Initialize scheduler (optional - uncomment to enable automatic route discovery)
+    # try:
+    #     from app.scheduler import init_scheduler
+    #     init_scheduler(enable_nightly=True, enable_trip_trigger=True)
+    #     logger.info("✓ Background scheduler started")
+    # except Exception as e:
+    #     logger.warning(f"⚠ Scheduler not started: {e}")
+
     logger.info("✓ Application started successfully")
 
 
@@ -82,13 +90,20 @@ async def startup_event():
 async def shutdown_event():
     """Run on application shutdown"""
     logger.info("👋 Shutting down application")
+    
+    # Shutdown scheduler if running
+    try:
+        from app.scheduler import shutdown_scheduler
+        shutdown_scheduler()
+    except:
+        pass
 
 
 # =============================================================================
 # INCLUDE ROUTERS
 # =============================================================================
 
-from app.routers import eta, drivers, trips, routes, gamification, documents
+from app.routers import eta, drivers, trips, routes, gamification, documents, admin
 
 app.include_router(eta.router, prefix="/api/v1", tags=["ETA Prediction"])
 app.include_router(routes.router, prefix="/api/v1", tags=["Routes"])
@@ -97,6 +112,7 @@ app.include_router(drivers.router, prefix="/api/v1", tags=["Drivers"])
 app.include_router(gamification.router, prefix="/api/v1", tags=["Gamification"])
 app.include_router(badges.router, prefix="/api/v1")
 app.include_router(documents.router, prefix="/api/v1", tags=["Documents"])
+app.include_router(admin.router, prefix="/api/v1", tags=["Admin"])
 
 
 # =============================================================================
@@ -116,7 +132,7 @@ async def root():
 @app.get("/api/v1/health", tags=["System"])
 async def health_check():
     from app.models.database import SessionLocal, Driver
-    
+
     # Check database
     db_healthy = False
     try:
@@ -126,7 +142,7 @@ async def health_check():
         db_healthy = True
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
-    
+
     # Check ML models
     ml_healthy = False
     try:
@@ -135,7 +151,7 @@ async def health_check():
         ml_healthy = loader.health_check().get('healthy', False)
     except:
         pass
-    
+
     return {
         "status": "healthy" if db_healthy else "degraded",
         "components": {

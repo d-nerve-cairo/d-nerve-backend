@@ -151,6 +151,9 @@ class Trip(Base):
     quality_score = Column(Float, default=0)
     points_earned = Column(Integer, default=0)
     
+    # Passengers
+    passenger_count = Column(Integer, default=0)
+    
     # Status
     status = Column(String(20), default="completed")
     
@@ -355,58 +358,95 @@ def create_tables():
 
 
 def init_sample_routes(db):
-    """Initialize sample routes if empty"""
+    """
+    Initialize Cairo microbus routes - EXACT routes used for ML training
+    
+    These 27 routes were generated using OpenRouteService with real Cairo
+    coordinates and used to train the DBSCAN clustering and ETA prediction models.
+    
+    Source: d-nerve-ml-models/data/cairo/raw/route_summary.csv
+    Hub coords: d-nerve-ml-models/data/cairo/cairo_hubs.csv
+    """
     if db.query(Route).count() == 0:
-        sample_routes = [
-            Route(
-                route_id="route_001",
-                name="Ramses - Tahrir",
-                origin="Ramses Square",
-                destination="Tahrir Square",
-                origin_lat=30.0626,
-                origin_lon=31.2466,
-                dest_lat=30.0444,
-                dest_lon=31.2357,
-                distance_km=3.5,
-                avg_duration_minutes=15,
-                fare_egp=5.0,
-                stops='["Ramses", "26th July", "Tahrir"]',
-                trip_count=150
-            ),
-            Route(
-                route_id="route_002",
-                name="Giza - Maadi",
-                origin="Giza Square",
-                destination="Maadi",
-                origin_lat=30.0131,
-                origin_lon=31.2089,
-                dest_lat=29.9602,
-                dest_lon=31.2569,
-                distance_km=12.0,
-                avg_duration_minutes=35,
-                fare_egp=10.0,
-                stops='["Giza", "Dokki", "Garden City", "Maadi"]',
-                trip_count=89
-            ),
-            Route(
-                route_id="route_003",
-                name="Heliopolis - Downtown",
-                origin="Heliopolis",
-                destination="Ataba Square",
-                origin_lat=30.0866,
-                origin_lon=31.3225,
-                dest_lat=30.0519,
-                dest_lon=31.2466,
-                distance_km=8.5,
-                avg_duration_minutes=28,
-                fare_egp=8.0,
-                stops='["Heliopolis", "Nasr City", "Abbasia", "Ataba"]',
-                trip_count=112
-            ),
+        
+        # Cairo Hub Coordinates (from cairo_hubs.csv)
+        HUBS = {
+            "ramses": {"name": "Ramses Square", "lat": 30.0619, "lon": 31.2466},
+            "tahrir": {"name": "Tahrir Square", "lat": 30.0444, "lon": 31.2357},
+            "giza": {"name": "Giza Square", "lat": 30.0131, "lon": 31.2089},
+            "ataba": {"name": "Ataba Square", "lat": 30.0531, "lon": 31.2469},
+            "maadi": {"name": "Maadi", "lat": 29.9602, "lon": 31.2569},
+            "heliopolis": {"name": "Heliopolis", "lat": 30.0866, "lon": 31.3225},
+            "nasr_city": {"name": "Nasr City", "lat": 30.0511, "lon": 31.3656},
+            "shubra": {"name": "Shubra", "lat": 30.0986, "lon": 31.2422},
+            "mohandessin": {"name": "Mohandessin", "lat": 30.0609, "lon": 31.2003},
+            "dokki": {"name": "Dokki", "lat": 30.0392, "lon": 31.2125},
+            "ain_shams": {"name": "Ain Shams", "lat": 30.1311, "lon": 31.3194},
+            "zeitoun": {"name": "Zeitoun", "lat": 30.1167, "lon": 31.3000},
+            "abbassia": {"name": "Abbassia", "lat": 30.0722, "lon": 31.2833},
+            "imbaba": {"name": "Imbaba", "lat": 30.0758, "lon": 31.2078},
+            "dar_el_salam": {"name": "Dar El Salam", "lat": 29.9833, "lon": 31.2417},
+            "6october": {"name": "6th October City", "lat": 29.9389, "lon": 30.9167},
+            "new_cairo": {"name": "New Cairo", "lat": 30.0300, "lon": 31.4700},
+            "helwan": {"name": "Helwan", "lat": 29.8500, "lon": 31.3340},
+        }
+        
+        # Routes from route_summary.csv (ML training data)
+        # Format: (route_id, origin_key, dest_key, total_points, estimated_duration_min, distance_km, fare)
+        ML_ROUTES = [
+            (1, "dokki", "mohandessin", 721, 6, 2.5, 4.0),
+            (2, "tahrir", "mohandessin", 631, 5, 3.0, 5.0),
+            (3, "giza", "6october", 4379, 37, 32.0, 15.0),
+            (4, "ramses", "giza", 917, 8, 5.5, 6.0),
+            (5, "tahrir", "6october", 4582, 38, 35.0, 18.0),
+            (6, "tahrir", "giza", 917, 8, 6.0, 6.0),
+            (7, "shubra", "imbaba", 1214, 10, 4.0, 5.0),
+            (8, "ramses", "ataba", 393, 3, 1.5, 3.0),
+            (9, "maadi", "helwan", 2835, 24, 15.0, 10.0),
+            (10, "heliopolis", "new_cairo", 2842, 24, 18.0, 12.0),
+            (11, "tahrir", "dokki", 521, 4, 3.0, 4.0),
+            (12, "tahrir", "maadi", 1988, 17, 10.0, 8.0),
+            (13, "heliopolis", "nasr_city", 1436, 12, 5.0, 5.0),
+            (14, "ramses", "nasr_city", 2415, 20, 12.0, 10.0),
+            (15, "ramses", "tahrir", 321, 3, 2.5, 4.0),
+            (16, "ramses", "heliopolis", 1817, 15, 9.0, 8.0),
+            (17, "ataba", "zeitoun", 1788, 15, 8.0, 7.0),
+            (18, "nasr_city", "new_cairo", 2299, 19, 14.0, 10.0),
+            (19, "ataba", "tahrir", 306, 3, 1.5, 3.0),
+            (20, "giza", "mohandessin", 1280, 11, 5.0, 5.0),
+            (21, "maadi", "dar_el_salam", 958, 8, 4.0, 4.0),
+            (22, "nasr_city", "ain_shams", 2174, 18, 10.0, 8.0),
+            (23, "abbassia", "heliopolis", 926, 8, 4.0, 5.0),
+            (24, "ramses", "shubra", 859, 7, 4.5, 5.0),
+            (25, "ataba", "abbassia", 730, 6, 3.5, 4.0),
+            (26, "giza", "dokki", 758, 6, 3.0, 4.0),
+            (27, "tahrir", "helwan", 3871, 32, 22.0, 12.0),
         ]
         
-        for route in sample_routes:
+        cairo_routes = []
+        
+        for route_id, origin_key, dest_key, total_points, duration, distance, fare in ML_ROUTES:
+            origin = HUBS[origin_key]
+            dest = HUBS[dest_key]
+            
+            cairo_routes.append(Route(
+                route_id=f"route_{route_id:03d}",
+                name=f"{origin['name']} - {dest['name']}",
+                origin=origin['name'],
+                destination=dest['name'],
+                origin_lat=origin['lat'],
+                origin_lon=origin['lon'],
+                dest_lat=dest['lat'],
+                dest_lon=dest['lon'],
+                distance_km=distance,
+                avg_duration_minutes=duration,
+                fare_egp=fare,
+                stops=f'["{origin["name"]}", "{dest["name"]}"]',
+                trip_count=10  # Each route has 10 trips in training data
+            ))
+        
+        for route in cairo_routes:
             db.add(route)
         
         db.commit()
-        logger.info("✓ Sample routes initialized")
+        logger.info(f"✓ {len(cairo_routes)} ML-trained Cairo routes initialized")
